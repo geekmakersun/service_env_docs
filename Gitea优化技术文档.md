@@ -50,11 +50,89 @@ git sparse-checkout set 你需要的目录1 目录2
 | HTTPS | 配置简单、支持代理、穿透性强 | 跨网访问、无 SSH 权限、需走代理加速 |
 | Git（git://） | 无加密开销，传输速度最快 | 内网公开仓库、只读拉取场景 |
 
-## 4. 代理配置
+## 4. 反向代理（Nginx）优化
+若使用 Nginx 作为 Gitea 的反向代理，添加以下配置提升传输性能：
+
+```nginx
+http {
+    # 全局 TCP 优化
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+
+    server {
+        listen 443 ssl http2;
+        server_name 你的Gitea域名;
+
+        # SSL 配置（略）
+
+        location / {
+            proxy_pass http://127.0.0.1:3000; # Gitea 本地监听地址
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # 缓冲区优化（减少磁盘 IO）
+            proxy_buffering on;
+            proxy_buffer_size 64k;
+            proxy_buffers 4 64k;
+            proxy_busy_buffers_size 128k;
+
+            # 大文件上传下载超时设置
+            client_max_body_size 0; # 不限制上传大小
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+        }
+    }
+}
+```
+
+## 5. 系统层面优化
+1. 调整 Linux 系统参数
+编辑 /etc/sysctl.conf ，添加以下配置后执行 sysctl -p  生效：
+
+```ini
+# 增大文件句柄限制（Git 并发 clone 时需要大量文件句柄）
+fs.file-max = 655350
+# TCP 优化
+net.core.somaxconn = 65535
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.ipv4.tcp_congestion_control = bbr # 启用 BBR 拥塞控制（跨网传输优化明显）
+```
+
+2. 进程资源限制
+编辑 /etc/security/limits.conf ，为运行 Gitea 的用户（如 git ）设置资源限制：
+
+```ini
+git soft nofile 65535
+git hard nofile 65535
+git soft nproc 65535
+git hard nproc 65535
+```
+
+3. 关闭 Swap 分区
+Git 操作对内存敏感，Swap 会导致性能急剧下降，建议关闭：
+
+```bash
+swapoff -a
+# 永久关闭：编辑 /etc/fstab，注释掉 swap 相关行
+```
+
+## 6. 日常维护与监控
+定期 GC 仓库 ：在 Gitea 后台或通过命令行对大仓库执行 git gc --aggressive ，优化 pack 文件，避免仓库碎片化；
+监控资源使用 ：重点监控 CPU、内存、磁盘 IO 和网络带宽，及时扩容瓶颈资源；
+控制并发数 ：高并发场景下，可通过 Nginx 限制单 IP 并发连接数，避免单个用户耗尽服务器资源。
+
+## 7. 代理配置
 
 国内访问境外 Gitea 实例，或跨网访问时，可配置 HTTP/SOCKS5 代理加速：
 
-### 4.1 HTTP/HTTPS 代理
+### 7.1 HTTP/HTTPS 代理
 
 ```bash
 # 全局代理（所有Git仓库生效）
@@ -69,7 +147,7 @@ git config --global --unset http.proxy
 git config --global --unset http.https://你的gitea域名.proxy
 ```
 
-### 4.2 SSH 协议代理配置
+### 7.2 SSH 协议代理配置
 
 编辑 ~/.ssh/config 文件：
 
@@ -81,7 +159,7 @@ Host 你的gitea域名
   IdentityFile ~/.ssh/你的私钥文件
 ```
 
-## 5. Git 参数调优
+## 8. Git 参数调优
 
 通过调整 Git 参数，提升传输和处理效率：
 
@@ -101,11 +179,11 @@ git config --global core.fscache true
 git config --global core.preloadIndex true
 ```
 
-## 6. 服务端优化
+## 9. 服务端优化
 
 如果你是 Gitea 服务端管理员，可通过修改 custom/conf/app.ini 配置文件，从底层优化 clone 性能，全局提升所有用户的克隆速度。
 
-### 6.1 [git] - Git 核心行为调优
+### 9.1 [git] - Git 核心行为调优
 
 ```ini
 [git]
@@ -126,7 +204,7 @@ http.postBuffer = 524288000    # HTTP 传输缓冲区（500MB）
 receive.fsckObjects = false     # 非高安全场景关闭，减少传输校验开销
 ```
 
-### 6.2 [server] - 服务传输层优化
+### 9.2 [server] - 服务传输层优化
 
 ```ini
 [server]
@@ -147,7 +225,7 @@ LFS_ALLOW_PURE_SSH = false # 支持SSH协议拉取LFS文件
 LFS_CONTENT_PATH = 你的LFS存储路径
 ```
 
-### 6.3 [repository] - 仓库存储优化
+### 9.3 [repository] - 仓库存储优化
 
 ```ini
 [repository]
@@ -158,7 +236,7 @@ PACKED_GIT_LIMIT = 512m
 PACKED_GIT_WINDOW_SIZE = 64m
 ```
 
-### 6.4 [cache] - 缓存配置
+### 9.4 [cache] - 缓存配置
 
 ```ini
 # 启用Redis缓存，减少磁盘IO和数据库查询，大幅提升热仓库响应速度
@@ -169,7 +247,7 @@ HOST = redis://127.0.0.1:6379/0 # 本地 Redis 地址
 ITEM_TTL = 16h # 缓存项过期时间，根据实际访问模式调整
 ```
 
-### 6.5 [database] - 数据库配置 
+### 9.5 [database] - 数据库配置 
 
 ```ini
 # 数据库连接池优化，避免连接瓶颈
@@ -179,11 +257,11 @@ MAX_OPEN_CONNS = 100
 CONN_MAX_LIFETIME = 300s
 ```
 
-## 7. 大文件处理
+## 10. 大文件处理
 
 仓库包含大量二进制大文件（模型、安装包、素材等）时，必须启用 Git LFS，配合对象存储 + CDN 实现极致加速。
 
-### 7.1 LFS 配置
+### 10.1 LFS 配置
 
 确保在 server 部分启用 LFS：
 
@@ -194,29 +272,29 @@ LFS_ALLOW_PURE_SSH = true
 LFS_CONTENT_PATH = 你的LFS存储路径
 ```
 
-### 7.2 对象存储配置
+### 10.2 对象存储配置
 
 建议将 LFS 文件存储在对象存储服务中，如 S3、OSS 等，配合 CDN 加速访问。
 
-## 8. 团队/大规模场景优化
+## 11. 团队/大规模场景优化
 
-### 8.1 仓库结构优化
+### 11.1 仓库结构优化
 
 - 对于大型项目，考虑拆分为多个小型仓库
 - 使用 monorepo 时，合理规划目录结构，利用稀疏克隆
 
-### 8.2 访问控制优化
+### 11.2 访问控制优化
 
 - 合理设置仓库权限，避免不必要的访问控制开销
 - 使用团队管理功能，统一管理权限
 
-### 8.3 监控与维护
+### 11.3 监控与维护
 
 - 定期检查仓库大小和健康状态
 - 设置合理的 GC 策略，保持仓库清洁
 - 监控服务器资源使用情况，及时扩容
 
-## 9. 总结
+## 12. 总结
 
 通过以上优化策略，可以显著提升 Gitea 的克隆速度和整体性能。根据实际使用场景，选择合适的优化方案：
 
