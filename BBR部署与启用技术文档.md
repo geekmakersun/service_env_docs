@@ -37,8 +37,13 @@ uname -r
 # 更新包列表
 apt update
 
-# 安装最新内核
+# 安装最新内核 (根据Ubuntu版本选择对应的命令)
+# Ubuntu 20.04
 apt install --install-recommends linux-generic-hwe-20.04
+# Ubuntu 22.04
+apt install --install-recommends linux-generic-hwe-22.04
+# Ubuntu 24.04
+apt install --install-recommends linux-generic-hwe-24.04
 
 # 重启系统
 systemctl reboot
