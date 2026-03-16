@@ -97,11 +97,11 @@ http {
 # 增大文件句柄限制（Git 并发 clone 时需要大量文件句柄）
 fs.file-max = 655350
 # TCP 优化
-net.core.somaxconn = 65535
-net.core.rmem_max = 16777216
-net.core.wmem_max = 16777216
-net.ipv4.tcp_rmem = 4096 87380 16777216
-net.ipv4.tcp_wmem = 4096 65536 16777216
+net.core.somaxconn = 65535  # 最大监听队列长度，增加并发连接数
+net.core.rmem_max = 16777216  # 最大接收缓冲区大小（16MB）
+net.core.wmem_max = 16777216  # 最大发送缓冲区大小（16MB）
+net.ipv4.tcp_rmem = 4096 87380 16777216  # TCP接收缓冲区内存限制（最小值、默认值、最大值）
+net.ipv4.tcp_wmem = 4096 65536 16777216  # TCP发送缓冲区内存限制（最小值、默认值、最大值）
 net.ipv4.tcp_congestion_control = bbr # 启用 BBR 拥塞控制（跨网传输优化明显）
 ```
 
