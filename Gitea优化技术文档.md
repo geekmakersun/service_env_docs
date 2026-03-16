@@ -102,7 +102,7 @@ net.core.rmem_max = 16777216  # 最大接收缓冲区大小（16MB）
 net.core.wmem_max = 16777216  # 最大发送缓冲区大小（16MB）
 net.ipv4.tcp_rmem = 4096 87380 16777216  # TCP接收缓冲区内存限制（最小值、默认值、最大值）
 net.ipv4.tcp_wmem = 4096 65536 16777216  # TCP发送缓冲区内存限制（最小值、默认值、最大值）
-net.ipv4.tcp_congestion_control = bbr # 启用 BBR 拥塞控制（跨网传输优化明显）
+#net.ipv4.tcp_congestion_control = bbr # 启用 BBR 拥塞控制（跨网传输优化明显）
 ```
 
 2. 进程资源限制
